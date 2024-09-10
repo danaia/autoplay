@@ -1,0 +1,11 @@
+cineboard/
+│
+├── core/
+│   ├── video_generator.py
+│   ├── video_player.py
+│   ├── dependency_installer.py
+├── ui/
+│   ├── prompt_panel.py
+│   ├── main_window.py
+├── queue_manager.py  # Ensure this file exists here
+├── main.py

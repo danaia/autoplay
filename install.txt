@@ -1,0 +1,11 @@
+PyQt6
+torch
+torchvision
+torchaudio
+transformers
+diffusers>=0.30.0
+accelerate
+moviepy
+opencv-python
+sentencepiece
+matplotlib
