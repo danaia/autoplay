@@ -5,6 +5,8 @@ from core.video_generator import VideoGenerator
 from core.dependency_installer import DependencyInstaller
 from queue_manager import QueueManager  # Import QueueManager directly if in the same folder as main.py
 from ui.resource_monitor import ResourceMonitor  # <-- Import the new Resource Monitor window
+from ui.video_grid import VideoGrid  # Import the new VideoGrid component
+
 import logging
 
 class TextToVideoGUI(QWidget):
@@ -12,11 +14,10 @@ class TextToVideoGUI(QWidget):
         super().__init__()
         self.panels = []
         self.output_dir = ""
-        self.queue_manager = QueueManager()  # Initialize the QueueManager
+        self.queue_manager = QueueManager()
         self.init_ui()
         self.open_resource_monitor()
 
-        # Connect the queue manager's signal to update the UI when the queue changes
         self.queue_manager.queue_updated.connect(self.update_queue_ui)
 
     def init_ui(self):
@@ -53,6 +54,10 @@ class TextToVideoGUI(QWidget):
 
         self.time_estimate_label = QLabel("Estimated time remaining: N/A")
         main_layout.addWidget(self.time_estimate_label)
+
+        # Add the VideoGrid component
+        self.video_grid = VideoGrid()
+        main_layout.addWidget(self.video_grid)
 
         self.setLayout(main_layout)
         self.setWindowTitle('Multi-Panel Text to Video Generator')
@@ -145,16 +150,19 @@ class TextToVideoGUI(QWidget):
         logging.info("Video generated successfully")
         self.progress_bar.setValue(0)
         self.time_estimate_label.setText("Estimated time remaining: N/A")
-        self.start_next_render()  # Move to the next video in the queue
+        self.start_next_render()
+
+    def update_time_estimate(self, estimate):
+        self.time_estimate_label.setText(estimate)
+
+
 
     def update_time_estimate(self, estimate):
         self.time_estimate_label.setText(estimate)
 
     def show_video(self, video_path):
-        from core.video_player import VideoPlayer  # Delayed import to avoid circular dependency
-        player = VideoPlayer(video_path)
-        player.finished.connect(self.start_next_render)
-        player.show()
+        self.video_grid.add_video(video_path)  # Add the video to the grid
+        self.start_next_render()  # Move to the next video in the queue
 
     def update_queue_ui(self):
         """Optional: Update the UI when the queue changes."""
