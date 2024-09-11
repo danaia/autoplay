@@ -1,4 +1,4 @@
-cineboard/
+autoplay/
 │
 ├── core/
 │   ├── video_generator.py
