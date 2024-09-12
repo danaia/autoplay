@@ -1,22 +1,22 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QProgressBar, QLabel, QScrollArea, QSpinBox, QFileDialog
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSettings
 from ui.prompt_panel import PromptPanel
 from core.video_generator import VideoGenerator
 from core.dependency_installer import DependencyInstaller
-from queue_manager import QueueManager  # Import QueueManager directly if in the same folder as main.py
-from ui.resource_monitor import ResourceMonitor  # <-- Import the new Resource Monitor window
-from ui.video_grid import VideoGrid  # Import the new VideoGrid component
-
+from queue_manager import QueueManager
+from ui.resource_monitor import ResourceMonitor
+from ui.video_grid import VideoGrid
 import logging
-
 class TextToVideoGUI(QWidget):
     def __init__(self):
         super().__init__()
         self.panels = []
         self.output_dir = ""
         self.queue_manager = QueueManager()
+        self.settings = QSettings("YourCompany", "TextToVideoApp")
         self.init_ui()
         self.open_resource_monitor()
+        self.load_settings()
 
         self.queue_manager.queue_updated.connect(self.update_queue_ui)
 
@@ -55,7 +55,7 @@ class TextToVideoGUI(QWidget):
         self.time_estimate_label = QLabel("Estimated time remaining: N/A")
         main_layout.addWidget(self.time_estimate_label)
 
-        # Add the VideoGrid component
+         # Add the VideoGrid component
         self.video_grid = VideoGrid()
         main_layout.addWidget(self.video_grid)
 
@@ -66,6 +66,23 @@ class TextToVideoGUI(QWidget):
     def open_resource_monitor(self):
         self.resource_monitor = ResourceMonitor()
         self.resource_monitor.show()
+
+    def closeEvent(self, event):
+        self.save_settings()
+        event.accept()
+
+    def save_settings(self):
+        self.settings.setValue("output_dir", self.output_dir)
+        self.settings.setValue("panel_count", len(self.panels))
+        for i, panel in enumerate(self.panels):
+            panel.save_settings(self.settings, i)
+
+    def load_settings(self):
+        self.output_dir = self.settings.value("output_dir", "")
+        panel_count = int(self.settings.value("panel_count", 1))
+        self.update_panel_count(panel_count)
+        for i, panel in enumerate(self.panels):
+            panel.load_settings(self.settings, i)
 
     def add_panel(self):
         panel = PromptPanel(len(self.panels))
@@ -84,7 +101,9 @@ class TextToVideoGUI(QWidget):
                 self.add_panel()
         elif count < current_count:
             for _ in range(current_count - count):
-                self.remove_panel()
+                panel = self.panels.pop()
+                self.panel_layout.removeWidget(panel)
+                panel.deleteLater()
 
     def process_all_queues(self):
         if not self.output_dir:

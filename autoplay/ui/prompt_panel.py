@@ -101,3 +101,21 @@ class PromptPanel(QFrame):
         }
         self.render_queue.append(queue_item)
         self.queue_list.addItem(f"{project_name}_{self.current_sequence}")
+
+    def save_settings(self, settings, index):
+        prefix = f"panel_{index}_"
+        settings.setValue(f"{prefix}project_name", self.project_name_input.text())
+        settings.setValue(f"{prefix}text", self.text_edit.toPlainText())
+        settings.setValue(f"{prefix}inference_steps", self.inference_steps_spinbox.value())
+        settings.setValue(f"{prefix}guidance_scale", self.guidance_slider.value())
+        settings.setValue(f"{prefix}num_frames", self.frames_spinbox.value())
+        settings.setValue(f"{prefix}num_videos", self.videos_spinbox.value())
+
+    def load_settings(self, settings, index):
+        prefix = f"panel_{index}_"
+        self.project_name_input.setText(settings.value(f"{prefix}project_name", ""))
+        self.text_edit.setPlainText(settings.value(f"{prefix}text", ""))
+        self.inference_steps_spinbox.setValue(int(settings.value(f"{prefix}inference_steps", 50)))
+        self.guidance_slider.setValue(int(settings.value(f"{prefix}guidance_scale", 7)))
+        self.frames_spinbox.setValue(int(settings.value(f"{prefix}num_frames", 49)))
+        self.videos_spinbox.setValue(int(settings.value(f"{prefix}num_videos", 1)))
