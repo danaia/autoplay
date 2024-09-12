@@ -14,20 +14,19 @@ from stable_audio_tools.inference.generation import generate_diffusion_cond
 from diffusers import StableAudioPipeline
 from queue import Queue
 
-
 class AudioGeneratorThread(QThread):
-    progress_update = pyqtSignal(int, int)
-    generation_complete = pyqtSignal(str)
+    progress_update = pyqtSignal(int, int, int)  # row, step, total_steps
+    generation_complete = pyqtSignal(str, int)  # output_file, row
+    all_complete = pyqtSignal()
 
-    def __init__(self, prompt, negative_prompt, duration, num_inference_steps, audio_end_in_s, num_waveforms_per_prompt, output_file, use_random_seed, seed):
+    def __init__(self, prompts, negative_prompt, duration, num_inference_steps, audio_end_in_s, num_waveforms_per_prompt, use_random_seed, seed):
         super().__init__()
-        self.prompt = prompt
+        self.prompts = prompts
         self.negative_prompt = negative_prompt
         self.duration = duration
         self.num_inference_steps = num_inference_steps
         self.audio_end_in_s = audio_end_in_s
         self.num_waveforms_per_prompt = num_waveforms_per_prompt
-        self.output_file = output_file
         self.use_random_seed = use_random_seed
         self.seed = seed if seed is not None else random.randint(0, 2**32 - 1)
 
@@ -35,27 +34,30 @@ class AudioGeneratorThread(QThread):
         pipe = StableAudioPipeline.from_pretrained("stabilityai/stable-audio-open-1.0", torch_dtype=torch.float16)
         pipe = pipe.to("cuda")
 
-        generator = torch.Generator("cuda").manual_seed(self.seed)
-        
-        def callback(step, timestep, latents):
-            self.progress_update.emit(step, self.num_inference_steps)
+        for row, prompt in enumerate(self.prompts):
+            generator = torch.Generator("cuda").manual_seed(self.seed if not self.use_random_seed else random.randint(0, 2**32 - 1))
+            
+            def callback(step, timestep, latents):
+                self.progress_update.emit(row, step, self.num_inference_steps)
 
-        audio = pipe(
-            prompt=self.prompt,
-            negative_prompt=self.negative_prompt,
-            num_inference_steps=self.num_inference_steps,
-            audio_end_in_s=self.audio_end_in_s,
-            num_waveforms_per_prompt=self.num_waveforms_per_prompt,
-            generator=generator,
-            callback=callback,
-            callback_steps=1
-        ).audios
+            audio = pipe(
+                prompt=prompt,
+                negative_prompt=self.negative_prompt,
+                num_inference_steps=self.num_inference_steps,
+                audio_end_in_s=self.audio_end_in_s,
+                num_waveforms_per_prompt=self.num_waveforms_per_prompt,
+                generator=generator,
+                callback=callback,
+                callback_steps=1
+            ).audios
 
-        output = audio[0].T.float().cpu().numpy()
-        sf.write(self.output_file, output, pipe.vae.sampling_rate)
+            output = audio[0].T.float().cpu().numpy()
+            output_file = f"generated_audio_{row}_{random.randint(1000, 9999)}.wav"
+            sf.write(output_file, output, pipe.vae.sampling_rate)
 
-        self.generation_complete.emit(self.output_file)
+            self.generation_complete.emit(output_file, row)
 
+        self.all_complete.emit()
 
 class AudioGeneratorApp(QWidget):
     def __init__(self):
@@ -66,8 +68,7 @@ class AudioGeneratorApp(QWidget):
         self.audio_output = QAudioOutput()
         self.player.setAudioOutput(self.audio_output)
         self.wav_files = []
-        self.generation_threads = []
-        self.prompt_queue = Queue()
+        self.generation_thread = None
 
     def initUI(self):
         layout = QVBoxLayout()
@@ -164,39 +165,69 @@ class AudioGeneratorApp(QWidget):
 
         seed = random.randint(0, 2**32 - 1) if use_random_seed else None
 
-        for i, prompt in enumerate(prompts):
-            output_file = f"generated_audio_{i}_{random.randint(1000, 9999)}.wav"
-            self.prompt_queue.put((prompt, negative_prompt, num_inference_steps, audio_end_in_s, num_waveforms_per_prompt, output_file, use_random_seed, seed))
+        # Clear existing rows in the table
+        self.table.setRowCount(0)
 
-        if self.prompt_queue.qsize() == 1:
-            self.process_next_prompt()
+        # Add rows for each prompt
+        for i in range(len(prompts)):
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            self.table.setItem(row, 0, QTableWidgetItem(f"Generating for prompt {i+1}..."))
+            
+            progress_bar = QProgressBar()
+            self.table.setCellWidget(row, 1, progress_bar)
 
-    def process_next_prompt(self):
-        if not self.prompt_queue.empty():
-            prompt, negative_prompt, num_inference_steps, audio_end_in_s, num_waveforms_per_prompt, output_file, use_random_seed, seed = self.prompt_queue.get()
+        self.generate_button.setEnabled(False)
 
-            thread = AudioGeneratorThread(prompt, negative_prompt, audio_end_in_s, num_inference_steps,
-                                          audio_end_in_s, num_waveforms_per_prompt, output_file, use_random_seed, seed)
-            thread.progress_update.connect(self.update_progress)
-            thread.generation_complete.connect(self.on_generation_complete)
-            thread.start()
-            self.generation_threads.append(thread)
+        self.generation_thread = AudioGeneratorThread(prompts, negative_prompt, audio_end_in_s, num_inference_steps,
+                                                      audio_end_in_s, num_waveforms_per_prompt, use_random_seed, seed)
+        self.generation_thread.progress_update.connect(self.update_progress)
+        self.generation_thread.generation_complete.connect(self.on_generation_complete)
+        self.generation_thread.all_complete.connect(self.on_all_complete)
+        self.generation_thread.start()
 
-    def update_progress(self, step, total):
-        # Update progress here
-        pass
+    def update_progress(self, row, step, total):
+        progress_bar = self.table.cellWidget(row, 1)
+        if progress_bar:
+            progress_bar.setValue(int((step / total) * 100))
 
-    def on_generation_complete(self, output_file):
-        # Handle audio generation completion here
-        pass
+    def on_generation_complete(self, output_file, row):
+        self.table.setItem(row, 0, QTableWidgetItem(output_file))
+        
+        # Add controls (play button, etc.) here
+        controls_layout = QHBoxLayout()
+        play_button = QPushButton("Play")
+        play_button.clicked.connect(lambda: self.play_audio(output_file))
+        controls_layout.addWidget(play_button)
+        
+        controls_widget = QWidget()
+        controls_widget.setLayout(controls_layout)
+        self.table.setCellWidget(row, 2, controls_widget)
+        
+        # Add remove button
+        remove_button = QPushButton("Remove")
+        remove_button.clicked.connect(lambda: self.remove_audio(row))
+        self.table.setCellWidget(row, 3, remove_button)
 
+    def on_all_complete(self):
+        self.generate_button.setEnabled(True)
+        QMessageBox.information(self, "Generation Complete", "All audio files have been generated.")
+
+    def play_audio(self, file_path):
+        self.player.setSource(QUrl.fromLocalFile(file_path))
+        self.player.play()
+
+    def remove_audio(self, row):
+        file_path = self.table.item(row, 0).text()
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        self.table.removeRow(row)
 
 def main():
     app = QApplication(sys.argv)
     window = AudioGeneratorApp()
     window.show()
     sys.exit(app.exec())
-
 
 if __name__ == "__main__":
     main()
