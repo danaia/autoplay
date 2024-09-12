@@ -35,8 +35,18 @@ class VideoGenerator(QThread):
             # Enable memory optimization techniques
             pipe.enable_model_cpu_offload()
             pipe.enable_sequential_cpu_offload()
-            pipe.vae.enable_slicing()
-            pipe.vae.enable_tiling()
+            if hasattr(pipe.vae, 'enable_slicing'):
+                pipe.vae.enable_slicing()
+            if hasattr(pipe.vae, 'enable_tiling'):
+                pipe.vae.enable_tiling()
+
+            # Enable TF32 for potential speed boost on RTX 4090
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+
+            # Set PyTorch CUDA memory allocation configuration to avoid fragmentation
+            torch.cuda.empty_cache()
+            torch.cuda.set_per_process_memory_fraction(0.9)  # Use up to 90% of available GPU memory
 
             start_time = time.time()
             for video_idx in range(self.num_videos):
@@ -70,6 +80,7 @@ class VideoGenerator(QThread):
                 self.video_generated.emit(output_path)
 
                 # Clear memory after each video generation
+                del video
                 torch.cuda.empty_cache()
                 gc.collect()
 
