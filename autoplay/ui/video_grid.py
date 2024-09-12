@@ -1,9 +1,12 @@
 import os
-from PyQt6.QtWidgets import QWidget, QGridLayout, QPushButton, QLabel, QVBoxLayout, QScrollArea, QMessageBox
+import logging
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, 
+                             QScrollArea, QMessageBox, QTableWidget, 
+                             QTableWidgetItem, QHeaderView, QPushButton)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap, QImage
 import cv2
-from ui.video_player import VideoPlayer  # Import VideoPlayer from the ui package
+from ui.video_player import VideoPlayer
 
 class VideoGrid(QWidget):
     video_removed = pyqtSignal(str)
@@ -11,40 +14,71 @@ class VideoGrid(QWidget):
     def __init__(self):
         super().__init__()
         self.init_ui()
-        self.video_paths = []
+        self.video_info = []  # List of tuples (video_path, generation_time)
 
     def init_ui(self):
         self.layout = QVBoxLayout(self)
         
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_content = QWidget()
-        self.grid_layout = QGridLayout(self.scroll_content)
-        self.scroll_area.setWidget(self.scroll_content)
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(['Thumbnail', 'Video Name', 'Generation Time', 'Actions'])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         
-        self.layout.addWidget(self.scroll_area)
+        # Set row height
+        self.table.verticalHeader().setDefaultSectionSize(150)
+        
+        self.layout.addWidget(self.table)
 
-    def add_video(self, video_path):
-        if video_path not in self.video_paths:
-            self.video_paths.append(video_path)
-            self.update_grid()
+    def add_video(self, video_path, generation_time=None):
+        logging.info(f"Attempting to add video: {video_path}")
+        if not os.path.exists(video_path):
+            logging.error(f"Video file does not exist: {video_path}")
+            return
 
-    def update_grid(self):
-        # Clear existing widgets
-        for i in reversed(range(self.grid_layout.count())): 
-            self.grid_layout.itemAt(i).widget().setParent(None)
+        if video_path not in [info[0] for info in self.video_info]:
+            self.video_info.append((video_path, generation_time))
+            logging.info(f"Video added to info list: {video_path}")
+            self.update_table()
+        else:
+            logging.info(f"Video already in grid: {video_path}")
 
-        # Add video thumbnails to the grid
-        for i, video_path in enumerate(self.video_paths):
-            thumbnail = self.create_video_thumbnail(video_path)
-            row, col = divmod(i, 4)  # 4 columns in the grid
-            self.grid_layout.addWidget(thumbnail, row, col)
+    def update_table(self):
+        logging.info(f"Updating table with {len(self.video_info)} videos")
+        self.table.setRowCount(len(self.video_info))
+        for row, (video_path, generation_time) in enumerate(self.video_info):
+            self.set_table_row(row, video_path, generation_time)
+        self.table.resizeColumnsToContents()
+        self.table.resizeRowsToContents()
+        logging.info("Table update completed")
+
+    def set_table_row(self, row, video_path, generation_time):
+        logging.info(f"Setting row {row} for video: {video_path}")
+        
+        # Thumbnail
+        thumbnail = self.create_video_thumbnail(video_path)
+        self.table.setCellWidget(row, 0, thumbnail)
+
+        # Video Name
+        name_item = QTableWidgetItem(os.path.basename(video_path))
+        name_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setItem(row, 1, name_item)
+
+        # Generation Time
+        time_item = QTableWidgetItem(self.format_time(generation_time))
+        time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.table.setItem(row, 2, time_item)
+
+        # Remove Button
+        remove_button = QPushButton("Remove")
+        remove_button.clicked.connect(lambda: self.remove_video(video_path))
+        self.table.setCellWidget(row, 3, remove_button)
 
     def create_video_thumbnail(self, video_path):
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-
-        # Create a thumbnail from the first frame of the video
+        thumbnail_label = QLabel()
+        thumbnail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         cap = cv2.VideoCapture(video_path)
         ret, frame = cap.read()
         if ret:
@@ -53,22 +87,27 @@ class VideoGrid(QWidget):
             bytes_per_line = ch * w
             q_img = QImage(frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
             pixmap = QPixmap.fromImage(q_img)
-            thumbnail_label = QLabel()
-            thumbnail_label.setPixmap(pixmap.scaled(200, 150, Qt.AspectRatioMode.KeepAspectRatio))
-            layout.addWidget(thumbnail_label)
+            thumbnail_label.setPixmap(pixmap.scaled(200, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            logging.info(f"Thumbnail created for: {video_path}")
+        else:
+            logging.error(f"Failed to create thumbnail for: {video_path}")
         cap.release()
+        thumbnail_label.mousePressEvent = lambda event: self.play_video(video_path)
+        return thumbnail_label
 
-        # Add a play button
-        play_button = QPushButton("Play")
-        play_button.clicked.connect(lambda: self.play_video(video_path))
-        layout.addWidget(play_button)
 
-        # Add a remove button
-        remove_button = QPushButton("Remove")
-        remove_button.clicked.connect(lambda: self.remove_video(video_path))
-        layout.addWidget(remove_button)
 
-        return widget
+    def format_time(self, seconds):
+        if seconds is None:
+            return "Unknown"
+        hours, remainder = divmod(int(seconds), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours > 0:
+            return f"{hours}h {minutes}m {seconds}s"
+        elif minutes > 0:
+            return f"{minutes}m {seconds}s"
+        else:
+            return f"{seconds:.2f}s"
 
     def play_video(self, video_path):
         self.video_player = VideoPlayer(video_path)
@@ -83,8 +122,8 @@ class VideoGrid(QWidget):
         if reply == QMessageBox.StandardButton.Yes:
             try:
                 os.remove(video_path)
-                self.video_paths.remove(video_path)
-                self.update_grid()
+                self.video_info = [info for info in self.video_info if info[0] != video_path]
+                self.update_table()
                 self.video_removed.emit(video_path)
             except Exception as e:
                 QMessageBox.warning(self, 'Error', f"Failed to remove video: {str(e)}")

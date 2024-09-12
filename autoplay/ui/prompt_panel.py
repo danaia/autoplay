@@ -1,5 +1,5 @@
 import logging
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit, QSlider, QSpinBox, QPushButton, QListWidget, QComboBox, QSizePolicy
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTextEdit, QSlider, QSpinBox, QPushButton, QListWidget, QSizePolicy
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QResizeEvent
 
@@ -26,14 +26,6 @@ class PromptPanel(QFrame):
         self.text_edit.setMinimumHeight(100)  # Set a minimum height
         self.text_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout.addWidget(self.text_edit)
-
-        # Model selection
-        model_layout = QHBoxLayout()
-        model_layout.addWidget(QLabel("Model:"))
-        self.model_combo = QComboBox()
-        self.model_combo.addItems(["4o-mini", "other_model1", "other_model2"])
-        model_layout.addWidget(self.model_combo)
-        layout.addLayout(model_layout)
 
         # Inference steps slider
         inference_layout = QHBoxLayout()
@@ -106,7 +98,6 @@ class PromptPanel(QFrame):
             'panel_id': self.panel_id,
             'project_name': project_name,
             'text': text,
-            'model': self.model_combo.currentText(),
             'num_inference_steps': self.inference_steps_spinbox.value(),
             'guidance_scale': self.guidance_slider.value(),
             'num_frames': self.frames_spinbox.value(),
@@ -120,7 +111,6 @@ class PromptPanel(QFrame):
         prefix = f"panel_{index}_"
         settings.setValue(f"{prefix}project_name", self.project_name_input.text())
         settings.setValue(f"{prefix}text", self.text_edit.toPlainText())
-        settings.setValue(f"{prefix}model", self.model_combo.currentText())
         settings.setValue(f"{prefix}inference_steps", self.inference_steps_spinbox.value())
         settings.setValue(f"{prefix}guidance_scale", self.guidance_slider.value())
         settings.setValue(f"{prefix}num_frames", self.frames_spinbox.value())
@@ -130,7 +120,6 @@ class PromptPanel(QFrame):
         prefix = f"panel_{index}_"
         self.project_name_input.setText(settings.value(f"{prefix}project_name", ""))
         self.text_edit.setPlainText(settings.value(f"{prefix}text", ""))
-        self.model_combo.setCurrentText(settings.value(f"{prefix}model", "4o-mini"))
         self.inference_steps_spinbox.setValue(int(settings.value(f"{prefix}inference_steps", 50)))
         self.guidance_slider.setValue(int(settings.value(f"{prefix}guidance_scale", 7)))
         self.frames_spinbox.setValue(int(settings.value(f"{prefix}num_frames", 49)))

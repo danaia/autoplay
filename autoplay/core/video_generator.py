@@ -11,7 +11,7 @@ class VideoGenerator(QThread):
     finished = pyqtSignal()
     progress = pyqtSignal(int)
     time_estimate = pyqtSignal(str)
-    video_generated = pyqtSignal(str)
+    video_generated = pyqtSignal(str, float)  # Now emits video path and generation time
 
     def __init__(self, text, num_inference_steps, guidance_scale, num_frames, project_name, sequence_number, output_dir, num_videos):
         super().__init__()
@@ -23,6 +23,7 @@ class VideoGenerator(QThread):
         self.sequence_number = sequence_number
         self.output_dir = output_dir
         self.num_videos = num_videos
+        self.generation_start_time = None
 
     def run(self):
         try:
@@ -40,6 +41,8 @@ class VideoGenerator(QThread):
 
             start_time = time.time()
             for video_idx in range(self.num_videos):
+                self.generation_start_time = time.time()  # Start time for each individual video
+
                 # Generate video
                 video = pipe(
                     prompt=self.text,
@@ -67,7 +70,8 @@ class VideoGenerator(QThread):
                 output_path = os.path.join(self.output_dir, f"{self.project_name}_{self.sequence_number}_video_{video_idx + 1}.mp4")
                 export_to_video(video, output_path, fps=8)
 
-                self.video_generated.emit(output_path)
+                generation_time = time.time() - self.generation_start_time
+                self.video_generated.emit(output_path, generation_time)
 
                 # Clear memory after each video generation
                 torch.cuda.empty_cache()
