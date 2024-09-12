@@ -1,19 +1,50 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QProgressBar, QLabel, QScrollArea, QSpinBox, QFileDialog
-from PyQt6.QtCore import Qt, QSettings
-from ui.prompt_panel import PromptPanel
+import logging
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QProgressBar, QLabel, QScrollArea, QSpinBox, QFileDialog, QTextEdit, QComboBox
+from PyQt6.QtCore import Qt, QSettings, QThread, pyqtSignal
+from ui.video_grid import VideoGrid
+from ui.resource_monitor import ResourceMonitor
 from core.video_generator import VideoGenerator
 from core.dependency_installer import DependencyInstaller
-from queue_manager import QueueManager
-from ui.resource_monitor import ResourceMonitor
-from ui.video_grid import VideoGrid
-import logging
+from utils.queue_manager import QueueManager
+from openai import OpenAI
+from ui.prompt_panel import PromptPanel
+import os
+
+# Initialize OpenAI API client
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+class PromptGenerationWorker(QThread):
+    prompts_generated = pyqtSignal(list)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, global_prompt, num_panels):
+        super().__init__()
+        self.global_prompt = global_prompt
+        self.num_panels = num_panels
+
+    def run(self):
+        try:
+            prompts = []
+            for i in range(self.num_panels):
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are a creative assistant that generates prompts for text-to-video AI models."},
+                        {"role": "user", "content": f"Based on the following global intention, generate a creative and detailed prompt for this cinematic scene {i+1} of a text-to-video AI model: {self.global_prompt}"}
+                    ]
+                )
+                prompts.append(response.choices[0].message.content.strip())
+            self.prompts_generated.emit(prompts)
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
 class TextToVideoGUI(QWidget):
     def __init__(self):
         super().__init__()
         self.panels = []
         self.output_dir = ""
         self.queue_manager = QueueManager()
-        self.settings = QSettings("YourCompany", "TextToVideoApp")
+        self.settings = QSettings("MicroFilm.AI", "AutoPlay")
         self.init_ui()
         self.open_resource_monitor()
         self.load_settings()
@@ -22,6 +53,25 @@ class TextToVideoGUI(QWidget):
 
     def init_ui(self):
         main_layout = QVBoxLayout()
+
+        # Add global prompt input with GPT model selection
+        global_prompt_layout = QHBoxLayout()
+        self.global_prompt_label = QLabel("Global Prompt:")
+        global_prompt_layout.addWidget(self.global_prompt_label)
+        self.global_prompt_input = QTextEdit()
+        self.global_prompt_input.setPlaceholderText("Enter your global intention here...")
+        self.global_prompt_input.setMaximumHeight(100)  # Make the global input smaller
+        global_prompt_layout.addWidget(self.global_prompt_input)
+        self.gpt_model_combo = QComboBox()
+        self.gpt_model_combo.addItems(["gpt-4o-mini", "gpt-4"])
+        global_prompt_layout.addWidget(QLabel("GPT Model:"))
+        global_prompt_layout.addWidget(self.gpt_model_combo)
+        main_layout.addLayout(global_prompt_layout)
+
+        # Add button to generate panel prompts
+        self.generate_panel_prompts_button = QPushButton('Generate Panel Prompts')
+        self.generate_panel_prompts_button.clicked.connect(self.generate_panel_prompts)
+        main_layout.addWidget(self.generate_panel_prompts_button)
 
         panel_control_layout = QHBoxLayout()
         panel_control_layout.addWidget(QLabel("Number of Panels:"))
@@ -32,12 +82,12 @@ class TextToVideoGUI(QWidget):
         panel_control_layout.addWidget(self.panel_count_spinbox)
         main_layout.addLayout(panel_control_layout)
 
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_content = QWidget()
-        self.panel_layout = QHBoxLayout(scroll_content)
-        scroll_area.setWidget(scroll_content)
-        main_layout.addWidget(scroll_area)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_content = QWidget()
+        self.panel_layout = QHBoxLayout(self.scroll_content)  # Changed to QHBoxLayout for horizontal arrangement
+        self.scroll_area.setWidget(self.scroll_content)
+        main_layout.addWidget(self.scroll_area)
 
         self.add_panel()
 
@@ -55,44 +105,40 @@ class TextToVideoGUI(QWidget):
         self.time_estimate_label = QLabel("Estimated time remaining: N/A")
         main_layout.addWidget(self.time_estimate_label)
 
-         # Add the VideoGrid component
+        # Add the VideoGrid component
         self.video_grid = VideoGrid()
         main_layout.addWidget(self.video_grid)
 
         self.setLayout(main_layout)
-        self.setWindowTitle('Multi-Panel Text to Video Generator')
+        self.setWindowTitle('AutoPlay By MicroFilm.AI')
         self.setGeometry(100, 100, 1200, 800)
+
+    def generate_panel_prompts(self):
+        global_prompt = self.global_prompt_input.toPlainText()
+        if not global_prompt:
+            logging.warning("Please enter a global prompt first.")
+            return
+
+        self.worker = PromptGenerationWorker(global_prompt, len(self.panels))
+        self.worker.prompts_generated.connect(self.handle_prompts_generated)
+        self.worker.error_occurred.connect(self.handle_error)
+        self.worker.start()
+
+    def handle_prompts_generated(self, prompts):
+        for panel, prompt in zip(self.panels, prompts):
+            panel.text_edit.setPlainText(prompt)
+
+    def handle_error(self, error_message):
+        logging.error(f"Error generating prompts: {error_message}")
 
     def open_resource_monitor(self):
         self.resource_monitor = ResourceMonitor()
         self.resource_monitor.show()
 
-    def closeEvent(self, event):
-        self.save_settings()
-        event.accept()
-
-    def save_settings(self):
-        self.settings.setValue("output_dir", self.output_dir)
-        self.settings.setValue("panel_count", len(self.panels))
-        for i, panel in enumerate(self.panels):
-            panel.save_settings(self.settings, i)
-
-    def load_settings(self):
-        self.output_dir = self.settings.value("output_dir", "")
-        panel_count = int(self.settings.value("panel_count", 1))
-        self.update_panel_count(panel_count)
-        for i, panel in enumerate(self.panels):
-            panel.load_settings(self.settings, i)
-
     def add_panel(self):
         panel = PromptPanel(len(self.panels))
         self.panels.append(panel)
         self.panel_layout.addWidget(panel)
-
-    def select_output_directory(self):
-        self.output_dir = QFileDialog.getExistingDirectory(self, "Select Output Directory")
-        if self.output_dir:
-            logging.info(f"Output directory set to: {self.output_dir}")
 
     def update_panel_count(self, count):
         current_count = len(self.panels)
@@ -105,15 +151,18 @@ class TextToVideoGUI(QWidget):
                 self.panel_layout.removeWidget(panel)
                 panel.deleteLater()
 
+    def select_output_directory(self):
+        self.output_dir = QFileDialog.getExistingDirectory(self, "Select Output Directory")
+        if self.output_dir:
+            logging.info(f"Output directory set to: {self.output_dir}")
+
     def process_all_queues(self):
         if not self.output_dir:
             logging.warning("Please select an output directory first")
             return
 
-        # Clear the queue before adding new items
         self.queue_manager.clear_queue()
 
-        # Add all items from the panels to the queue
         for panel in self.panels:
             for item in panel.render_queue:
                 self.queue_manager.add_to_queue(item)
@@ -137,18 +186,15 @@ class TextToVideoGUI(QWidget):
         self.start_next_render()
 
     def start_next_render(self):
-        # Check if there are items left in the queue
         if not self.queue_manager.has_items():
             logging.info("All renders completed")
             return
 
-        # Get the next item from the queue
         item = self.queue_manager.get_next_item()
         if item is None:
             logging.warning("No items left in the queue")
             return
 
-        # Initialize video generator for the next item
         self.generator = VideoGenerator(
             item['text'],
             item['num_inference_steps'],
@@ -174,15 +220,29 @@ class TextToVideoGUI(QWidget):
     def update_time_estimate(self, estimate):
         self.time_estimate_label.setText(estimate)
 
-
-
-    def update_time_estimate(self, estimate):
-        self.time_estimate_label.setText(estimate)
-
     def show_video(self, video_path):
-        self.video_grid.add_video(video_path)  # Add the video to the grid
-        self.start_next_render()  # Move to the next video in the queue
+        self.video_grid.add_video(video_path)
+        self.start_next_render()
 
     def update_queue_ui(self):
-        """Optional: Update the UI when the queue changes."""
         logging.info("Queue updated.")
+
+    def save_settings(self):
+        self.settings.setValue("output_dir", self.output_dir)
+        self.settings.setValue("panel_count", len(self.panels))
+        self.settings.setValue("global_prompt", self.global_prompt_input.toPlainText())
+        for i, panel in enumerate(self.panels):
+            panel.save_settings(self.settings, i)
+
+    def load_settings(self):
+        self.output_dir = self.settings.value("output_dir", "")
+        panel_count = int(self.settings.value("panel_count", 1))
+        self.update_panel_count(panel_count)
+        self.global_prompt_input.setPlainText(self.settings.value("global_prompt", ""))
+        self.gpt_model_combo.setCurrentText(self.settings.value("gpt_model", "gpt-3.5-turbo"))
+        for i, panel in enumerate(self.panels):
+            panel.load_settings(self.settings, i)
+
+    def closeEvent(self, event):
+        self.save_settings()
+        event.accept()
