@@ -30,8 +30,8 @@ class PromptGenerationWorker(QThread):
                 response = client.chat.completions.create(
                     model="gpt-4-turbo-preview",
                     messages=[
-                        {"role": "system", "content": "You are a creative assistant that generates prompts for text-to-video AI models. keep token low. keep the prompt under 220 on the return prompt."},
-                        {"role": "user", "content": f"Based on the following global intention, generate a creative and detailed prompt for this cinematic scene {i+1} of a text-to-video AI model: {self.global_prompt}"}
+                        {"role": "system", "content": "You are a creative assistant that generates prompts for text-to-video AI models."},
+                        {"role": "user", "content": f"Based on the following global intention, generate a creative and detailed prompt for this cinematic CogVideoX-5b scene {i+1} of a text-to-video AI model: {self.global_prompt}"}
                     ]
                 )
                 prompts.append(response.choices[0].message.content.strip())

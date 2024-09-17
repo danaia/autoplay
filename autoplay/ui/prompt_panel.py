@@ -23,7 +23,7 @@ class PromptPanel(QFrame):
 
         # Text prompt input
         self.text_edit = QTextEdit()
-        self.text_edit.setMinimumHeight(100)  # Set a minimum height
+        self.text_edit.setMinimumHeight(100)
         self.text_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout.addWidget(self.text_edit)
 
@@ -69,7 +69,7 @@ class PromptPanel(QFrame):
         layout.addLayout(videos_layout)
 
         # Add to queue button
-        self.queue_button = QPushButton('Add to Queue')
+        self.queue_button = QPushButton("Add to Queue")
         self.queue_button.clicked.connect(self.add_to_queue)
         layout.addWidget(self.queue_button)
 
@@ -79,7 +79,7 @@ class PromptPanel(QFrame):
 
         self.setLayout(layout)
         self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
-        
+
         # Make the panel resizable
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
@@ -95,14 +95,14 @@ class PromptPanel(QFrame):
 
         self.current_sequence += 1
         queue_item = {
-            'panel_id': self.panel_id,
-            'project_name': project_name,
-            'text': text,
-            'num_inference_steps': self.inference_steps_spinbox.value(),
-            'guidance_scale': self.guidance_slider.value(),
-            'num_frames': self.frames_spinbox.value(),
-            'sequence_number': self.current_sequence,
-            'num_videos': self.videos_spinbox.value()
+            "panel_id": self.panel_id,
+            "project_name": project_name,
+            "text": text,
+            "num_inference_steps": self.inference_steps_spinbox.value(),
+            "guidance_scale": self.guidance_slider.value(),
+            "num_frames": self.frames_spinbox.value(),
+            "sequence_number": self.current_sequence,
+            "num_videos": self.videos_spinbox.value(),
         }
         self.render_queue.append(queue_item)
         self.queue_list.addItem(f"{project_name}_{self.current_sequence}")
@@ -126,8 +126,8 @@ class PromptPanel(QFrame):
         self.videos_spinbox.setValue(int(settings.value(f"{prefix}num_videos", 1)))
 
     def sizeHint(self):
-        return QSize(400, 600)  # Suggest a default size
+        return QSize(400, 600)
 
     def resizeEvent(self, event: QResizeEvent):
         super().resizeEvent(event)
-        # You can add custom resize behavior here if needed
+        # Custom resize behavior if needed
